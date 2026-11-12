@@ -1,0 +1,760 @@
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <vector>
+#include <string>
+#include <iomanip>
+#include <algorithm>
+#include <ctime>
+#include <limits>
+#include <cctype>
+
+using namespace std;
+
+struct Expense {
+    int id;
+    string username, date, category, description;
+    double amount;
+};
+
+struct Budget {
+    string username, month;
+    double amount;
+};
+
+const string USER_FILE = "users.txt";
+const string EXPENSE_FILE = "expenses.txt";
+const string BUDGET_FILE = "budgets.txt";
+
+// Get today's date
+string todayDate() {
+    time_t now = time(nullptr);
+    tm* local = localtime(&now);
+
+    stringstream ss;
+    ss << (local->tm_year + 1900) << "-"
+       << setw(2) << setfill('0') << (local->tm_mon + 1) << "-"
+       << setw(2) << setfill('0') << local->tm_mday;
+
+    return ss.str();
+}
+
+// Get current month
+string currentMonth() {
+    return todayDate().substr(0, 7);
+}
+
+// Check leap year
+bool isLeapYear(int year) {
+    return (year % 400 == 0) ||
+           (year % 4 == 0 && year % 100 != 0);
+}
+
+// Get number of days in a month
+int daysInMonth(int year, int month) {
+    if (month == 2)
+        return isLeapYear(year) ? 29 : 28;
+
+    if (month == 4 || month == 6 ||
+        month == 9 || month == 11)
+        return 30;
+
+    return 31;
+}
+
+// Validate date format YYYY-MM-DD
+bool validDate(const string& date) {
+    if (date.size() != 10 ||
+        date[4] != '-' || date[7] != '-')
+        return false;
+
+    for (int i = 0; i < 10; i++) {
+        if (i == 4 || i == 7)
+            continue;
+
+        if (!isdigit(static_cast<unsigned char>(date[i])))
+            return false;
+    }
+
+    int year = stoi(date.substr(0, 4));
+    int month = stoi(date.substr(5, 2));
+    int day = stoi(date.substr(8, 2));
+
+    if (year < 1900 || month < 1 || month > 12)
+        return false;
+
+    return day >= 1 && day <= daysInMonth(year, month);
+}
+
+// Validate month format YYYY-MM
+bool validMonth(const string& month) {
+    if (month.size() != 7 || month[4] != '-')
+        return false;
+
+    for (int i = 0; i < 7; i++) {
+        if (i == 4)
+            continue;
+
+        if (!isdigit(static_cast<unsigned char>(month[i])))
+            return false;
+    }
+
+    int year = stoi(month.substr(0, 4));
+    int m = stoi(month.substr(5, 2));
+
+    return year >= 1900 && m >= 1 && m <= 12;
+}
+
+// Register user
+bool registerUser() {
+    string username, password;
+
+    cout << "\n--- User Registration ---\n";
+    cout << "Username: ";
+    cin >> username;
+
+    cout << "Password: ";
+    cin >> password;
+
+    ifstream in(USER_FILE);
+    string u, p;
+
+    while (in >> u >> p) {
+        if (u == username) {
+            cout << "Username already exists.\n";
+            return false;
+        }
+    }
+
+    in.close();
+
+    ofstream out(USER_FILE, ios::app);
+
+    if (!out) {
+        cout << "Unable to open user file.\n";
+        return false;
+    }
+
+    out << username << " " << password << "\n";
+
+    cout << "Registration successful!\n";
+    return true;
+}
+
+// Login user
+bool loginUser(string& loggedInUser) {
+    string username, password, u, p;
+
+    cout << "\n--- Login ---\n";
+    cout << "Username: ";
+    cin >> username;
+
+    cout << "Password: ";
+    cin >> password;
+
+    ifstream in(USER_FILE);
+
+    while (in >> u >> p) {
+        if (u == username && p == password) {
+            loggedInUser = username;
+            cout << "Login successful. Welcome, "
+                 << username << "!\n";
+            return true;
+        }
+    }
+
+    cout << "Invalid username or password.\n";
+    return false;
+}
+
+// Load expenses
+vector<Expense> loadExpenses() {
+    vector<Expense> all;
+    ifstream in(EXPENSE_FILE);
+
+    Expense e;
+
+    while (in >> e.id >> e.username >> e.date
+              >> e.category >> e.amount) {
+
+        getline(in, e.description);
+
+        if (!e.description.empty() &&
+            e.description[0] == ' ')
+            e.description.erase(0, 1);
+
+        if (e.description.empty())
+            e.description = "-";
+
+        all.push_back(e);
+    }
+
+    return all;
+}
+
+// Save expenses
+void saveExpenses(const vector<Expense>& all) {
+    ofstream out(EXPENSE_FILE);
+
+    if (!out) {
+        cout << "Unable to save expenses.\n";
+        return;
+    }
+
+    for (const auto& e : all) {
+        out << e.id << " "
+            << e.username << " "
+            << e.date << " "
+            << e.category << " "
+            << fixed << setprecision(2)
+            << e.amount << " "
+            << e.description << "\n";
+    }
+}
+
+// Get monthly expense total
+double getMonthlyTotal(
+    const vector<Expense>& all,
+    const string& user,
+    const string& month
+) {
+    double total = 0;
+
+    for (const auto& e : all) {
+        if (e.username == user &&
+            e.date.size() >= 7 &&
+            e.date.substr(0, 7) == month) {
+            total += e.amount;
+        }
+    }
+
+    return total;
+}
+
+// Get monthly budget
+double getBudget(
+    const string& user,
+    const string& month
+) {
+    ifstream in(BUDGET_FILE);
+
+    string u, m;
+    double b;
+
+    while (in >> u >> m >> b) {
+        if (u == user && m == month)
+            return b;
+    }
+
+    return 0;
+}
+
+// Set monthly budget
+void setBudget(const string& user) {
+    string month;
+    double amount;
+
+    cout << "\nEnter month (YYYY-MM): ";
+    cin >> month;
+
+    if (!validMonth(month)) {
+        cout << "Invalid month format.\n";
+        return;
+    }
+
+    cout << "Enter monthly budget: ";
+
+    if (!(cin >> amount) ||
+        !cin.good() || amount <= 0) {
+        cout << "Invalid budget amount.\n";
+        cin.clear();
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        return;
+    }
+
+    vector<Budget> budgets;
+
+    ifstream in(BUDGET_FILE);
+    Budget b;
+
+    while (in >> b.username >> b.month >> b.amount) {
+        if (!(b.username == user && b.month == month))
+            budgets.push_back(b);
+    }
+
+    in.close();
+
+    budgets.push_back({user, month, amount});
+
+    ofstream out(BUDGET_FILE);
+
+    for (const auto& item : budgets) {
+        out << item.username << " "
+            << item.month << " "
+            << item.amount << "\n";
+    }
+
+    cout << "Budget saved successfully!\n";
+}
+
+// Add expense
+void addExpense(const string& user) {
+    Expense e;
+
+    vector<Expense> all = loadExpenses();
+
+    e.id = 1;
+
+    for (const auto& x : all)
+        e.id = max(e.id, x.id + 1);
+
+    e.username = user;
+
+    cout << "\nDate (YYYY-MM-DD or 0 for today): ";
+    cin >> e.date;
+
+    if (e.date == "0")
+        e.date = todayDate();
+
+    if (!validDate(e.date)) {
+        cout << "Invalid date. Please try again.\n";
+        return;
+    }
+
+    cout << "Category (Food/Travel/Study/Shopping/Other): ";
+    cin >> e.category;
+
+    cout << "Amount: ";
+
+    if (!(cin >> e.amount) || !cin.good() || e.amount <= 0) {
+        cout << "Please enter a valid positive amount.\n";
+        cin.clear();
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        return;
+    }
+
+    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+    cout << "Description: ";
+    getline(cin, e.description);
+
+    if (e.description.empty())
+        e.description = "-";
+
+    all.push_back(e);
+
+    saveExpenses(all);
+
+    cout << "\nExpense added successfully!\n";
+
+    double budget = getBudget(user, e.date.substr(0, 7));
+
+    if (budget > 0) {
+        double total = getMonthlyTotal(
+            all, user, e.date.substr(0, 7)
+        );
+
+        cout << fixed << setprecision(2);
+        cout << "Monthly spending: Rs. " << total
+             << " / Rs. " << budget << "\n";
+
+        if (total > budget)
+            cout << "WARNING: Monthly budget exceeded!\n";
+
+        else if (total >= budget * 0.80)
+            cout << "Alert: You have used 80% or more of your budget.\n";
+    }
+}
+
+// View expense history
+void viewHistory(const string& user) {
+    vector<Expense> all = loadExpenses();
+
+    cout << "\n--- Expense History ---\n";
+
+    cout << left
+         << setw(6) << "ID"
+         << setw(13) << "Date"
+         << setw(14) << "Category"
+         << setw(12) << "Amount"
+         << "Description\n";
+
+    cout << string(70, '-') << "\n";
+
+    bool found = false;
+
+    for (const auto& e : all) {
+        if (e.username == user) {
+            found = true;
+
+            cout << left
+                 << setw(6) << e.id
+                 << setw(13) << e.date
+                 << setw(14) << e.category
+                 << setw(12) << fixed << setprecision(2)
+                 << e.amount
+                 << e.description << "\n";
+        }
+    }
+
+    if (!found)
+        cout << "No expenses recorded yet.\n";
+}
+
+// Category-wise report
+void categoryReport(const string& user) {
+    vector<Expense> all = loadExpenses();
+
+    vector<pair<string, double>> totals;
+
+    for (const auto& e : all) {
+        if (e.username == user) {
+
+            auto it = find_if(
+                totals.begin(),
+                totals.end(),
+                [&](const auto& p) {
+                    return p.first == e.category;
+                }
+            );
+
+            if (it == totals.end())
+                totals.push_back({e.category, e.amount});
+            else
+                it->second += e.amount;
+        }
+    }
+
+    cout << "\n--- Category-wise Expense ---\n";
+
+    if (totals.empty()) {
+        cout << "No expenses found.\n";
+        return;
+    }
+
+    sort(
+        totals.begin(),
+        totals.end(),
+        [](const auto& a, const auto& b) {
+            return a.second > b.second;
+        }
+    );
+
+    for (const auto& p : totals) {
+        cout << left << setw(16) << p.first
+             << "Rs. " << fixed << setprecision(2)
+             << p.second << "\n";
+    }
+}
+
+// Monthly report
+void monthlyReport(const string& user) {
+    string month;
+
+    cout << "\nEnter month (YYYY-MM): ";
+    cin >> month;
+
+    if (!validMonth(month)) {
+        cout << "Invalid month format.\n";
+        return;
+    }
+
+    vector<Expense> all = loadExpenses();
+
+    double total = getMonthlyTotal(all, user, month);
+    double budget = getBudget(user, month);
+
+    cout << "\n--- Monthly Expense Report: "
+         << month << " ---\n";
+
+    cout << fixed << setprecision(2);
+    cout << "Total expense: Rs. " << total << "\n";
+
+    if (budget > 0) {
+        cout << "Budget: Rs. " << budget << "\n";
+        cout << "Remaining: Rs. " << budget - total << "\n";
+
+        if (total > budget)
+            cout << "Status: Budget exceeded.\n";
+        else
+            cout << "Status: Within budget.\n";
+    }
+    else {
+        cout << "No budget set for this month.\n";
+    }
+}
+
+// Expense prediction
+void predictExpense(const string& user) {
+    string month;
+
+    cout << "\nEnter month (YYYY-MM): ";
+    cin >> month;
+
+    if (!validMonth(month)) {
+        cout << "Invalid month format.\n";
+        return;
+    }
+
+    vector<Expense> all = loadExpenses();
+
+    double total = getMonthlyTotal(all, user, month);
+    double budget = getBudget(user, month);
+
+    int year = stoi(month.substr(0, 4));
+    int m = stoi(month.substr(5, 2));
+
+    int daysPassed = 1;
+    int totalDays = daysInMonth(year, m);
+
+    if (month == currentMonth()) {
+        time_t now = time(nullptr);
+        tm* local = localtime(&now);
+        daysPassed = local->tm_mday;
+    }
+    else if (month < currentMonth()) {
+        daysPassed = totalDays;
+    }
+
+    double predicted = total / daysPassed * totalDays;
+
+    cout << "\n--- Expense Prediction ---\n";
+
+    cout << fixed << setprecision(2);
+
+    cout << "Recorded spending: Rs. "
+         << total << "\n";
+
+    cout << "Estimated month-end spending: Rs. "
+         << predicted << "\n";
+
+    if (budget > 0) {
+        cout << "Monthly budget: Rs. "
+             << budget << "\n";
+
+        if (predicted > budget)
+            cout << "Prediction: Budget may be exceeded.\n";
+        else
+            cout << "Prediction: Likely to stay within budget.\n";
+    }
+    else {
+        cout << "Set a budget to compare the prediction.\n";
+    }
+}
+
+// Search expense
+void searchExpense(const string& user) {
+    string key;
+
+    cout << "\nEnter date or category to search: ";
+    cin >> key;
+
+    vector<Expense> all = loadExpenses();
+
+    bool found = false;
+
+    for (const auto& e : all) {
+        if (e.username == user &&
+            (e.date == key || e.category == key)) {
+
+            cout << "ID: " << e.id
+                 << " | " << e.date
+                 << " | " << e.category
+                 << " | Rs. " << fixed << setprecision(2)
+                 << e.amount
+                 << " | " << e.description << "\n";
+
+            found = true;
+        }
+    }
+
+    if (!found)
+        cout << "No matching expense found.\n";
+}
+
+// Delete expense
+void deleteExpense(const string& user) {
+    int id;
+
+    cout << "\nEnter expense ID to delete: ";
+
+    if (!(cin >> id) || id <= 0) {
+        cout << "Invalid ID.\n";
+        cin.clear();
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        return;
+    }
+
+    vector<Expense> all = loadExpenses();
+
+    auto oldSize = all.size();
+
+    all.erase(
+        remove_if(
+            all.begin(),
+            all.end(),
+            [&](const Expense& e) {
+                return e.username == user && e.id == id;
+            }
+        ),
+        all.end()
+    );
+
+    if (all.size() == oldSize) {
+        cout << "Expense ID not found.\n";
+    }
+    else {
+        saveExpenses(all);
+        cout << "Expense deleted successfully!\n";
+    }
+}
+
+// User dashboard
+void userMenu(const string& user) {
+    int choice;
+
+    do {
+        cout << "\n========== SMART DIGITAL EXPENSE TRACKER ==========\n";
+
+        cout << "1. Add Daily Expense\n";
+        cout << "2. View Expense History\n";
+        cout << "3. Category-wise Expense\n";
+        cout << "4. Monthly Expense Report\n";
+        cout << "5. Set Monthly Budget\n";
+        cout << "6. Budget Warning / Status\n";
+        cout << "7. Expense Prediction\n";
+        cout << "8. Search Expense\n";
+        cout << "9. Delete Expense\n";
+        cout << "0. Logout\n";
+
+        cout << "Choose option: ";
+
+        if (!(cin >> choice)) {
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            cout << "Please enter a valid number.\n";
+            continue;
+        }
+
+        switch (choice) {
+            case 1:
+                addExpense(user);
+                break;
+
+            case 2:
+                viewHistory(user);
+                break;
+
+            case 3:
+                categoryReport(user);
+                break;
+
+            case 4:
+                monthlyReport(user);
+                break;
+
+            case 5:
+                setBudget(user);
+                break;
+
+            case 6: {
+                string month;
+
+                cout << "Enter month (YYYY-MM): ";
+                cin >> month;
+
+                if (!validMonth(month)) {
+                    cout << "Invalid month format.\n";
+                    break;
+                }
+
+                double budget = getBudget(user, month);
+
+                double total = getMonthlyTotal(
+                    loadExpenses(), user, month
+                );
+
+                if (budget == 0) {
+                    cout << "No budget set for this month.\n";
+                }
+                else {
+                    cout << fixed << setprecision(2);
+
+                    cout << "Spent Rs. " << total
+                         << " out of Rs. " << budget;
+
+                    if (total > budget)
+                        cout << " - BUDGET EXCEEDED!\n";
+                    else
+                        cout << " - Within budget.\n";
+                }
+
+                break;
+            }
+
+            case 7:
+                predictExpense(user);
+                break;
+
+            case 8:
+                searchExpense(user);
+                break;
+
+            case 9:
+                deleteExpense(user);
+                break;
+
+            case 0:
+                cout << "Logged out successfully.\n";
+                break;
+
+            default:
+                cout << "Invalid choice. Try again.\n";
+        }
+
+    } while (choice != 0);
+}
+
+// Main function
+int main() {
+    int choice;
+    string user;
+
+    do {
+        cout << "\n====== SMART DIGITAL EXPENSE TRACKER ======\n";
+
+        cout << "1. Register\n";
+        cout << "2. Login\n";
+        cout << "0. Exit\n";
+
+        cout << "Choose option: ";
+
+        if (!(cin >> choice)) {
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            cout << "Please enter a valid number.\n";
+            continue;
+        }
+
+        switch (choice) {
+            case 1:
+                registerUser();
+                break;
+
+            case 2:
+                if (loginUser(user))
+                    userMenu(user);
+                break;
+
+            case 0:
+                cout << "Thank you for using Expense Tracker!\n";
+                break;
+
+            default:
+                cout << "Invalid choice.\n";
+        }
+
+    } while (choice != 0);
+
+    return 0;
+}
